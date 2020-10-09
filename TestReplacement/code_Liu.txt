@@ -1,0 +1,152 @@
+%Test Replacement Project Q1 ginput extraction
+
+clear
+clc
+
+%data=imread('myapple.jpeg');
+data=imread('myhand.jpeg');
+%get the foreground label
+figure 
+image(data)
+[x, y] = ginput(150);
+hold on
+plot(x, y, '-wx')
+pixels_f = impixel(data,x,y);
+feature_f=[x y pixels_f]';
+%save('feat_apple.mat','feature_f');
+save('feat_hand.mat','feature_f');
+
+%get the background label
+figure
+image(data)
+[m,n]=ginput(150);
+hold on
+plot(m, n, '-yx')
+pixels_b = impixel(data,m,n);
+feature_b=[m n pixels_b]';
+%save('feat_apple.mat','feature_b','-append');
+save('feat_hand.mat','feature_b','-append');
+
+%Test Replacement Project Q1 main code
+
+clear;
+clc;
+
+%load('feat_apple.mat');
+%image = imread('myapple.jpeg');
+load('feat_hand.mat');
+image = imread('myhand.jpeg');
+x = feature_f;
+y = feature_b;
+m = 5;
+M = size(x,2);
+N = size(y,2); 
+
+cvx_begin
+variables a(m) b u(M) v(N)
+minimize((ones(1,M) * u + ones(1,N) * v))
+subject to
+a' * x - b >= 1 - u';
+a' * y - b <= -(1 - v');
+u >= 0;
+v >= 0;
+cvx_end;
+
+figure
+scatter3(x(3,:),x(4,:),x(5,:)) % foreground RGB 
+xlabel('R value')
+ylabel('G value')
+zlabel('B value')
+hold on;
+scatter3(y(3,:),y(4,:),y(5,:)) % background RGB
+xlabel('R value')
+ylabel('G value')
+zlabel('B value')
+[X,Y] = meshgrid(0:255,0:255);
+Z = (-b - a(3) * X - a(4) * Y)./a(5); %hyper plane
+hold on;
+surface(X,Y,Z)
+
+figure,
+imshow(image); %original image
+
+figure,
+im = double(image);
+svmt = zeros(size(im,1),size(im,2));
+for i = 1:size(im,1)
+    for j = 1:size(im,2)
+        svmt(i,j) = [i j im(i,j,1) im(i,j,2) im(i,j,3)]*a-b; 
+    end
+end
+
+svmt = im2bw(svmt,0); %svm threshold
+imshow(svmt);
+
+level = graythresh(image);
+sim = im2bw(image,level);
+sim = -1 * double(sim);
+sim = sim + 1;
+figure
+imshow(sim) %simple thresholding
+
+
+% Test Replacement Project Qb BP
+
+clear
+clc
+
+f0 = 1; % Fundamental Frequency
+t = 0:1e-3:1; % Time Axis
+
+n = randperm(30, 15).';
+a = rand(15, 1);
+b = rand(15, 1);
+
+% Noise Generation
+snr = 10;
+noise = randn(size(t));
+noise = noise - mean(noise);
+signal_power = 1 / length(t)*sum(t.^2);
+noise_variance = signal_power / ( 10^(snr/10) );
+noise = sqrt(noise_variance) / std(noise)*noise;
+
+y = sum(a.*cos(2*pi*f0*n*t) - b.*cos(2*pi*f0*n*t)) + noise;
+f = cos(2*pi*f0*((1:30).')*t);
+
+cvx_begin 
+variables x(1,30) 
+minimize sum((x*f - y).^2) + 1*norm(x,1)
+%minimize sum((x*f - y).^2) + 10*norm(x,1)
+%minimize sum((x*f - y).^2) + 100*norm(x,1)
+cvx_end
+
+% Reoptimize problem over nonzero coefficients
+sp = find(abs(x)>1e-5); 
+f1 = f(sp,:);
+
+cvx_begin
+variables x1(1,length(sp))
+minimize sum((x1*f1 - y).^2)
+cvx_end
+
+%plot signal over time
+figure,
+plot(t, y, '-'),
+hold on
+plot(t, x1*f1, '--r'),
+xlabel('time'), ylabel('amplitude');
+legend('Original Signal','Reconstructed Signal')
+
+%calculate and plot error over time
+error = abs(x1*f1 - y);
+figure,
+plot(t, error),
+xlabel('time'), ylabel('error');
+error_n = sum((x1*f1 - y).^2) / sum(y.^2);
+disp(error_n);
+
+%original and recovered coefficients
+a_o = a;
+b_o = b;
+x_r = [sp; x1].';
+save('coefficients.mat','a_o', 'b_o', 'x_r')
